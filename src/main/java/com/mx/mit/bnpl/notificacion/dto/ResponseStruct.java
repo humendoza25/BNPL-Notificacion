@@ -19,6 +19,6 @@ import java.io.Serializable;
 public class ResponseStruct implements Serializable {
 	private boolean success;
 	private String message;
-	private int code;
+	private String code;
 	private Object data;
 }

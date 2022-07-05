@@ -1,9 +1,8 @@
 package com.mx.mit.bnpl.notificacion;
 
+import com.mx.mit.bnpl.notificacion.config.PropertiesListener;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-
-import com.mx.mit.bnpl.notificacion.config.PropertiesListener;
 
 @SpringBootApplication
 public class BnplNotificacionApplication {

@@ -1,0 +1,130 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mit-bnpl-wappservice
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mit-bnpl-wappservice
+  labels:
+    app: mit-bnpl-wappservice
+spec:
+  replicas: ENV_REPLICA
+  template:
+    metadata:
+      name: mit-bnpl-wappservice
+      labels:
+        app: mit-bnpl-wappservice
+    spec:
+      serviceAccountName: mit-bnpl-wappservice
+      containers:
+        - name: mit-bnpl-wappservice
+          image: CI_REGISTRY_URI/CI_REGISTRY_IMAGE:master
+          imagePullPolicy: Always
+        
+          volumeMounts: 
+          - mountPath: /elastic/apm/agent 
+            name: elastic-apm-agent 
+          env: 
+          - name: ELASTIC_APM_SERVER_URL 
+            value: "ENV_KIBANA"  
+          - name: ELASTIC_APM_SERVICE_NAME 
+            value: "mit-bnpl-wappservice" 
+          - name: ELASTIC_APM_APPLICATION_PACKAGES 
+            value: "org.springframework.mit-bnpl-wappservice" 
+          - name: ELASTIC_APM_ENVIRONMENT 
+            value: dev 
+          - name: ELASTIC_APM_LOG_LEVEL 
+            value: DEBUG 
+          - name: ELASTIC_APM_SECRET_TOKEN 
+            value: ""
+          - name: JAVA_TOOL_OPTIONS 
+            value: -javaagent:/elastic/apm/agent/elastic-apm-agent.jar
+          # Variables para la app
+          - name: SECRET_REGION
+            value: "us-east-1"
+          - name:  spring.profiles.active
+            value: ENV_SPRING_PROFILES_ACTIVE
+
+      volumes: 
+      - name: elastic-apm-agent 
+        emptyDir: {} 
+      initContainers: 
+      - name: elastic-java-agent 
+        image: ENV_IMAGE_AGENT_JAVA
+        volumeMounts: 
+        - mountPath: /elastic/apm/agent 
+          name: elastic-apm-agent 
+        command: ['cp', '-v', '/usr/agent/elastic-apm-agent.jar', '/elastic/apm/agent']
+        
+  selector:
+    matchLabels:
+      app: mit-bnpl-wappservice
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: mit-bnpl-wappservice
+  labels:
+    app: mit-bnpl-wappservice
+spec:
+  type: NodePort
+  ports:
+    - port: 8080
+      nodePort: 31009
+      targetPort: 8080
+  selector:
+    app: mit-bnpl-wappservice
+
+---
+
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: mit-bnpl-wappservice-gateway
+spec:
+  selector:
+    istio: ingressgateway # use istio default controller
+  servers:
+  - port:
+      number: 31009
+      name: mit-bnpl-wappservice-port
+      protocol: HTTP
+    hosts:
+    - "*"
+
+---
+
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: mit-bnpl-wappservice
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - mit-bnpl-wappservice-gateway
+  http:
+  - headers:
+        request:
+          set:
+            server: MIT
+    match:
+    - uri:
+        prefix: /notificacion
+    
+    route:
+    - destination:
+        host: mit-bnpl-wappservice
+        port:
+          number: 8080
+      headers:
+            response:
+              remove:
+                - x-envoy-decorator-operation
+

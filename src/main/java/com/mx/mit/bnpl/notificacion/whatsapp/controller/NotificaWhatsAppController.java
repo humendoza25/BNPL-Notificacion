@@ -1,7 +1,7 @@
-package com.mx.mit.bnpl.notificacion.controller;
+package com.mx.mit.bnpl.notificacion.whatsapp.controller;
 
 import com.mx.mit.bnpl.notificacion.dto.ResponseStruct;
-import com.mx.mit.bnpl.notificacion.service.IWhatsAppService;
+import com.mx.mit.bnpl.notificacion.service.INotificacionService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -13,12 +13,12 @@ import java.util.Map;
 public class NotificaWhatsAppController {
 
     @Autowired
-    private IWhatsAppService whatsAppService;
+    private INotificacionService notificacionService;
 
-    @PostMapping("/sendOpt")
+    @PostMapping("/sendws")
     @ResponseStatus(HttpStatus.OK)
-    public Map<String, Object> sendOpt(@RequestBody Map<String, Object> request){
-        return this.whatsAppService.token();
+    public ResponseStruct sendWhatsApp(@RequestBody Map<String, Object> request){
+        return this.notificacionService.sendWhatsApp(request);
     }
 
 }

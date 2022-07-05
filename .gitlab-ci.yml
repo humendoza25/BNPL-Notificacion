@@ -1,0 +1,94 @@
+stages:
+  - code-quality-test
+  - code-quality
+  - build
+  - deploy
+
+image: $ENV_IMAGE_DOCKER
+
+services:
+  - name: $ENV_IMAGE_DOCKER_DIND
+    command: ["--tls=false"]
+
+variables:
+   MAVEN_CLI_OPTS: "-s .m2/settings.xml --batch-mode"
+   MAVEN_OPTS: "-Dmaven.repo.local=.m2/repository"
+   
+cache:
+  paths:
+    - .m2/repository/
+    - target/
+
+build:
+  stage: build
+  image: $ENV_IMAGE_MAVEN
+  script:
+    - sed -i "s#ENV_IMAGE_OPENJDK#$ENV_IMAGE_OPENJDK#g" Dockerfile
+
+    - mvn $MAVEN_CLI_OPTS clean install
+    - mvn $MAVEN_CLI_OPTS deploy -Dmaven.test.skip=true
+    - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $CI_REGISTRY_URI
+    - docker build --pull -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" .
+    - docker tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" "$CI_REGISTRY_URI/$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
+    - docker push "$CI_REGISTRY_URI/$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
+  variables:
+    DOCKER_HOST: tcp://localhost:2375
+    DOCKER_TLS_CERTDIR: ""
+  only:
+    - master
+  tags:
+    -  $eks_runner
+
+
+deploy:
+  stage: deploy
+  image: $ENV_IMAGE_BITNAMI
+  script:
+    - sed -i "s#ENV_IMAGE_OPENJDK#$ENV_IMAGE_OPENJDK#g" Dockerfile
+    
+    - sed -i "s#CI_REGISTRY_URI#$CI_REGISTRY_URI#g" manifiesto.yml
+    - sed -i "s#CI_REGISTRY_IMAGE#$CI_REGISTRY_IMAGE#g" manifiesto.yml
+    - sed -i "s#ENV_REPLICA#$ENV_REPLICA#g" manifiesto.yml
+    - sed -i "s#ENV_KIBANA#$ENV_KIBANA#g" manifiesto.yml
+
+    - sed -i "s#ENV_SPRING_PROFILES_ACTIVE#$ENV_SPRING_PROFILES_ACTIVE#g" manifiesto.yml
+    - sed -i "s#ENV_IMAGE_AGENT_JAVA#$ENV_IMAGE_AGENT_JAVA#g" manifiesto.yml
+
+    - kubectl get ns $ENV_DEPLOY || kubectl create ns $ENV_DEPLOY
+    - kubectl apply -f ./manifiesto.yml -n $ENV_DEPLOY
+    - kubectl get deployment mit-bnpl-wappservice -n $ENV_DEPLOY || kubectl create deployment mit-bnpl-wappservice --image="$CI_REGISTRY_URI/$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" -n $ENV_DEPLOY
+    - kubectl set image deployment/mit-bnpl-wappservice mit-bnpl-wappservice="$CI_REGISTRY_URI/$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" -n $ENV_DEPLOY
+    - kubectl rollout restart deployment/mit-bnpl-wappservice -n $ENV_DEPLOY
+
+  only:
+    - master
+  tags:
+    -  $eks_runner
+
+
+code-quality-test:
+  image: $ENV_IMAGE_MAVEN
+  stage: code-quality-test
+  artifacts:
+    expire_in: 1 hour
+    untracked: true
+  script:
+    #- mvn install
+    - mvn $MAVEN_CLI_OPTS clean install -Dmaven.test.skip=true
+  tags:
+    -  $eks_runner
+
+
+sonar-report:
+  stage: code-quality
+  dependencies:
+    - code-quality-test
+  image: $ENV_IMAGE_SONARQUBE
+  variables:
+    SONAR_URL: https://mitsonarqube.mit.com.mx
+    SONAR_ANALYSIS_MODE: publish
+  script:
+  - gitlab-sonar-scanner
+  tags:
+    -  $eks_runner
+
